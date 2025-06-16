@@ -5,7 +5,7 @@ export class UserController {
   // Get all users
   static async getAllUsers(req: Request, res: Response): Promise<void> {
     try {
-      const users = await UserModel.find().select("-password");
+      const users = await UserModel.findAll();
       res.status(200).json(users);
     } catch (error) {
       res.status(500).json({ message: "Error fetching users", error });
@@ -34,9 +34,9 @@ export class UserController {
       res.status(201).json({
         message: "User created successfully",
         user: {
-          ...savedUser.toObject(),
-          password: undefined,
-        },
+          ...savedUser.toJSON(),
+          password: undefined
+        }
       });
     } catch (error) {
       res.status(400).json({ message: "Error creating user", error });
@@ -46,11 +46,10 @@ export class UserController {
   // Update user
   static async updateUser(req: Request, res: Response): Promise<void> {
     try {
-      const updatedUser = await User.findByIdAndUpdate(
+      const updatedUser = await UserModel.findByIdAndUpdate(
         req.params.id,
-        req.body,
-        { new: true }
-      ).select("-password");
+        req.body
+      );
 
       if (!updatedUser) {
         res.status(404).json({ message: "User not found" });
@@ -59,7 +58,7 @@ export class UserController {
 
       res.status(200).json({
         message: "User updated successfully",
-        user: updatedUser,
+        user: updatedUser
       });
     } catch (error) {
       res.status(400).json({ message: "Error updating user", error });
@@ -69,7 +68,7 @@ export class UserController {
   // Delete user
   static async deleteUser(req: Request, res: Response): Promise<void> {
     try {
-      const deletedUser = await User.findByIdAndDelete(req.params.id);
+      const deletedUser = await UserModel.findByIdAndDelete(req.params.id);
 
       if (!deletedUser) {
         res.status(404).json({ message: "User not found" });
