@@ -12,7 +12,6 @@ export class UserMySqlModel implements UserModel {
         last_name AS lastName, 
         username, 
         email, 
-        hashed_password AS hashedPassword, 
         created_at AS createdAt, 
         updated_at AS updatedAt 
       FROM ${this.tableName}
@@ -28,7 +27,6 @@ export class UserMySqlModel implements UserModel {
         last_name AS lastName, 
         username, 
         email, 
-        hashed_password AS hashedPassword, 
         created_at AS createdAt, 
         updated_at AS updatedAt 
       FROM ${this.tableName} WHERE id = ?`,
@@ -45,8 +43,7 @@ export class UserMySqlModel implements UserModel {
         first_name AS firstName, 
         last_name AS lastName, 
         username, 
-        email, 
-        hashed_password AS hashedPassword, 
+        email,
         created_at AS createdAt, 
         updated_at AS updatedAt 
       FROM ${this.tableName} WHERE email = ?`,
@@ -64,7 +61,7 @@ export class UserMySqlModel implements UserModel {
         last_name AS lastName, 
         username, 
         email, 
-        hashed_password AS hashedPassword, 
+        hashed_password AS password,
         created_at AS createdAt, 
         updated_at AS updatedAt 
       FROM ${this.tableName} WHERE username = ?`,
@@ -137,5 +134,27 @@ export class UserMySqlModel implements UserModel {
     );
 
     return (result as any).affectedRows > 0;
+  }
+
+  async markAsVerified(id: string, verifiedAt: Date): Promise<boolean> {
+    const [result] = await pool.query(
+      `UPDATE ${this.tableName} SET is_verified = TRUE, verified_at = ? WHERE id = ?`,
+      [verifiedAt, id]
+    );
+    return (result as any).affectedRows > 0;
+  }
+
+  async findByVerificationToken(token: string): Promise<User | null> {
+    const [rows] = await pool.query<User[]>(
+      `SELECT u.id, u.first_name AS firstName, u.last_name AS lastName, 
+            u.username, u.email, u.hashed_password AS password, 
+            u.is_verified AS isVerified, u.verified_at AS verifiedAt,
+            u.created_at AS createdAt, u.updated_at AS updatedAt 
+     FROM ${this.tableName} u 
+     JOIN verification_tokens vt ON u.id = vt.user_id 
+     WHERE vt.token = ? AND vt.expires_at > NOW()`,
+      [token]
+    );
+    return rows.length > 0 ? rows[0] : null;
   }
 }

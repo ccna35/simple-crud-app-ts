@@ -12,19 +12,28 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@types/nodemailer": "^6.4.17",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
+    "cron": "^4.3.1",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "handlebars": "^4.7.8",
+    "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.14.1",
+    "nodemailer": "^7.0.3",
+    "uuid": "^11.1.0",
     "winston": "^3.17.0",
     "zod": "^3.25.64"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.18",
+    "@types/cron": "^2.4.3",
     "@types/express": "^5.0.2",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.15.21",
+    "@types/uuid": "^10.0.0",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"

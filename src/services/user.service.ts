@@ -1,3 +1,4 @@
+import bcrypt from "bcrypt";
 import {
   CreateUserDTO,
   User,
@@ -6,6 +7,8 @@ import {
 } from "../models/User.model";
 import { UserMySqlModel } from "../models/UserMySql.model";
 import { AppError } from "../utils/error";
+import logger from "../utils/logger";
+import { VerificationService } from "./verification.service";
 
 export class UserService {
   private userModel: UserModel;
@@ -14,15 +17,17 @@ export class UserService {
     this.userModel = userModel || new UserMySqlModel();
   }
 
-  // Helper method to convert User to UserResponse (exclude hashedPassword)
+  // Helper method to convert User to UserResponse (exclude password)
   private toUserResponse(user: User): UserResponse {
     // Pick only the fields we want to expose and format dates
-    const { hashedPassword, ...userWithoutPassword } = user;
+    const { password, ...userWithoutPassword } = user;
 
     return {
       ...userWithoutPassword,
       createdAt: user.createdAt ? user.createdAt.toISOString() : undefined,
-      updatedAt: user.updatedAt ? user.updatedAt.toISOString() : undefined
+      updatedAt: user.updatedAt ? user.updatedAt.toISOString() : undefined,
+      isVerified: user.isVerified || false, // Default to false if not set
+      verifiedAt: user.verifiedAt ? user.verifiedAt.toISOString() : undefined // Format verifiedAt if it exists
     };
   }
 
@@ -51,9 +56,17 @@ export class UserService {
   async createUser(
     userData: CreateUserDTO
   ): Promise<{ id: string; user: UserResponse }> {
+    logger.debug("Creating new user", {
+      email: userData.email,
+      username: userData.username
+    });
+
     // Check if user exists with the same email
     const existingUserByEmail = await this.findByEmail(userData.email);
     if (existingUserByEmail) {
+      logger.warn(`User with email ${userData.email} already exists`, {
+        email: userData.email
+      });
       throw new AppError(
         `User with email ${userData.email} already exists`,
         409
@@ -63,17 +76,37 @@ export class UserService {
     // Check if user exists with the same username
     const existingUserByUsername = await this.findByUsername(userData.username);
     if (existingUserByUsername) {
+      logger.warn(`User with username ${userData.username} already exists`, {
+        username: userData.username
+      });
       throw new AppError(
         `User with username ${userData.username} already exists`,
         409
       );
     }
+    // Hash password and create user
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(userData.password, salt);
 
-    const userId = await this.userModel.create(userData);
+    const userToCreate = {
+      ...userData,
+      password: hashedPassword
+    };
+
+    const userId = await this.userModel.create(userToCreate);
     const newUser = await this.userModel.findById(userId);
 
     if (!newUser) {
       throw new AppError("Failed to retrieve created user", 500);
+    }
+
+    // Send verification email
+    try {
+      const verificationService = new VerificationService(this);
+      await verificationService.sendVerificationEmail(userId, userData.email);
+    } catch (error) {
+      logger.error("Failed to send verification email", { userId, error });
+      // We don't throw here to avoid failing the registration process
     }
 
     return {
@@ -115,6 +148,12 @@ export class UserService {
       }
     }
 
+    // If password is being updated, hash it
+    if (userData.password) {
+      const salt = await bcrypt.genSalt(10);
+      userData.password = await bcrypt.hash(userData.password, salt);
+    }
+
     await this.userModel.update(id, userData);
 
     // Fetch the updated user
@@ -132,5 +171,10 @@ export class UserService {
       throw new AppError(`User with id ${id} not found`, 404);
     }
     return this.userModel.delete(id);
+  }
+
+  // Method to mark a user as verified
+  async markUserAsVerified(id: string, verifiedAt: Date): Promise<boolean> {
+    return this.userModel.markAsVerified(id, verifiedAt);
   }
 }
