@@ -1,54 +1,72 @@
 import { z } from "zod";
 
-// Validation schemas for input data
 export const createUserSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  firstName: z.string().optional(),
-  lastName: z.string().optional()
+  firstName: z
+    .string()
+    .min(1, "First name is required")
+    .max(100, "First name cannot exceed 100 characters")
+    .describe("First name, 1-100 characters"),
+  lastName: z
+    .string()
+    .min(1, "Last name is required")
+    .max(100, "Last name cannot exceed 100 characters")
+    .describe("Last name, 1-100 characters"),
+  username: z
+    .string()
+    .min(3, "Username must be at least 3 characters")
+    .max(50, "Username cannot exceed 50 characters")
+    .describe("Username, 3-50 characters"),
+  email: z
+    .string()
+    .email("Invalid email format")
+    .max(100, "Email cannot exceed 100 characters")
+    .describe("A valid email address"),
+  password: z
+    .string()
+    .min(6, "Password must be at least 6 characters")
+    .describe("Password hash, minimum 6 characters")
 });
 
 export const updateUserSchema = z
   .object({
+    firstName: z
+      .string()
+      .min(1, "First name is required")
+      .max(100, "First name cannot exceed 100 characters")
+      .describe("First name, 1-100 characters")
+      .optional(),
+    lastName: z
+      .string()
+      .min(1, "Last name is required")
+      .max(100, "Last name cannot exceed 100 characters")
+      .describe("Last name, 1-100 characters")
+      .optional(),
     username: z
       .string()
       .min(3, "Username must be at least 3 characters")
+      .max(50, "Username cannot exceed 50 characters")
+      .describe("Username, 3-50 characters")
       .optional(),
-    email: z.string().email("Invalid email address").optional(),
+    email: z
+      .string()
+      .email("Invalid email format")
+      .max(100, "Email cannot exceed 100 characters")
+      .describe("A valid email address")
+      .optional(),
     password: z
       .string()
-      .min(8, "Password must be at least 8 characters")
-      .optional(),
-    firstName: z.string().optional(),
-    lastName: z.string().optional()
+      .min(6, "Password must be at least 6 characters")
+      .describe("Password hash, minimum 6 characters")
+      .optional()
   })
   .refine((data) => Object.keys(data).length > 0, {
-    message: "At least one field must be provided for update"
+    message: "At least one field must be provided",
+    path: ["general"]
   });
 
-// User validation schema for login
-export const loginUserSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8).max(100)
+export const idParamSchema = z.object({
+  id: z.string().describe("User ID")
 });
 
-// Helper function to validate with specific schema
-export const validateUser = <T>(
-  schema: z.ZodType<T>,
-  data: unknown
-): {
-  success: boolean;
-  data?: T;
-  error?: z.ZodError;
-} => {
-  try {
-    const validData = schema.parse(data);
-    return { success: true, data: validData };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return { success: false, error };
-    }
-    throw error;
-  }
-};
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;

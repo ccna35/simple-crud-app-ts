@@ -1,106 +1,136 @@
-import { UserModel } from "../models/user.model";
-import * as bcrypt from "bcrypt";
-import { z } from "zod";
-import { User } from "../interfaces";
 import {
-  createUserSchema,
-  updateUserSchema
-} from "../validators/user.validator";
+  CreateUserDTO,
+  User,
+  UserModel,
+  UserResponse
+} from "../models/User.model";
+import { UserMySqlModel } from "../models/UserMySql.model";
+import { AppError } from "../utils/error";
 
 export class UserService {
-  // Get all users
-  async getAllUsers(): Promise<UserModel[]> {
-    return UserModel.findAll();
+  private userModel: UserModel;
+
+  constructor(userModel?: UserModel) {
+    this.userModel = userModel || new UserMySqlModel();
   }
 
-  // Get user by ID
-  async getUserById(id: string): Promise<UserModel | null> {
-    if (!id) {
-      throw new Error("Invalid ID");
+  // Helper method to convert User to UserResponse (exclude hashedPassword)
+  private toUserResponse(user: User): UserResponse {
+    // Pick only the fields we want to expose and format dates
+    const { hashedPassword, ...userWithoutPassword } = user;
+
+    return {
+      ...userWithoutPassword,
+      createdAt: user.createdAt ? user.createdAt.toISOString() : undefined,
+      updatedAt: user.updatedAt ? user.updatedAt.toISOString() : undefined
+    };
+  }
+
+  async getAllUsers(): Promise<UserResponse[]> {
+    const users = await this.userModel.findAll();
+    // Convert each user to a safe response object
+    return users.map((user) => this.toUserResponse(user));
+  }
+
+  async getUserById(id: string): Promise<UserResponse> {
+    const user = await this.userModel.findById(id);
+    if (!user) {
+      throw new AppError(`User with id ${id} not found`, 404);
     }
-    return UserModel.findById(id);
+    return this.toUserResponse(user);
   }
 
-  // Get user by email
-  async getUserByEmail(email: string): Promise<UserModel | null> {
-    if (!z.string().email().safeParse(email).success) {
-      throw new Error("Invalid email address");
-    }
-    return UserModel.findByEmail(email);
+  async findByEmail(email: string): Promise<User | null> {
+    return this.userModel.findByEmail(email);
   }
 
-  // Create a new user
+  async findByUsername(username: string): Promise<User | null> {
+    return this.userModel.findByUsername(username);
+  }
+
   async createUser(
-    data: Omit<User, "id" | "createdAt" | "updatedAt">
-  ): Promise<UserModel> {
-    const validatedData = createUserSchema.parse(data);
-
-    // Check for duplicate email or username
-    const existingUser = await UserModel.findByEmail(validatedData.email);
-    if (existingUser) {
-      throw new Error("Email already exists");
-    }
-    const existingUsername = await UserModel.findAll();
-    if (
-      existingUsername.some((user) => user.username === validatedData.username)
-    ) {
-      throw new Error("Username already exists");
+    userData: CreateUserDTO
+  ): Promise<{ id: string; user: UserResponse }> {
+    // Check if user exists with the same email
+    const existingUserByEmail = await this.findByEmail(userData.email);
+    if (existingUserByEmail) {
+      throw new AppError(
+        `User with email ${userData.email} already exists`,
+        409
+      );
     }
 
-    // Hash the password
-    const hashedPassword = await bcrypt.hash(validatedData.password, 10);
+    // Check if user exists with the same username
+    const existingUserByUsername = await this.findByUsername(userData.username);
+    if (existingUserByUsername) {
+      throw new AppError(
+        `User with username ${userData.username} already exists`,
+        409
+      );
+    }
 
-    // Create user instance
-    const user = new UserModel({
-      ...validatedData,
-      hashedPassword
-    });
+    const userId = await this.userModel.create(userData);
+    const newUser = await this.userModel.findById(userId);
 
-    // Save to database
-    return user.save();
+    if (!newUser) {
+      throw new AppError("Failed to retrieve created user", 500);
+    }
+
+    return {
+      id: userId,
+      user: this.toUserResponse(newUser)
+    };
   }
 
-  // Update a user
-  async updateUser(id: string, data: Partial<User>): Promise<UserModel | null> {
-    if (!id) {
-      throw new Error("Invalid ID");
+  async updateUser(
+    id: string,
+    userData: Partial<CreateUserDTO>
+  ): Promise<UserResponse> {
+    const existingUser = await this.userModel.findById(id);
+    if (!existingUser) {
+      throw new AppError(`User with id ${id} not found`, 404);
     }
 
-    const validatedData = updateUserSchema.parse(data);
-    const updateData: any = { ...validatedData };
-
-    // Handle password hashing if provided
-    if (validatedData.password) {
-      updateData.hashedPassword = await bcrypt.hash(validatedData.password, 10);
-      delete updateData.password;
-    }
-
-    // Check for duplicate email or username if provided
-    if (validatedData.email) {
-      const existingUser = await UserModel.findByEmail(validatedData.email);
-      if (existingUser && existingUser.id !== id) {
-        throw new Error("Email already exists");
+    // If email is being updated, check if it already exists
+    if (userData.email && userData.email !== existingUser.email) {
+      const existingUserByEmail = await this.findByEmail(userData.email);
+      if (existingUserByEmail) {
+        throw new AppError(
+          `User with email ${userData.email} already exists`,
+          409
+        );
       }
     }
-    if (validatedData.username) {
-      const existingUsers = await UserModel.findAll();
-      if (
-        existingUsers.some(
-          (user) => user.username === validatedData.username && user.id !== id
-        )
-      ) {
-        throw new Error("Username already exists");
+
+    // If username is being updated, check if it already exists
+    if (userData.username && userData.username !== existingUser.username) {
+      const existingUserByUsername = await this.findByUsername(
+        userData.username
+      );
+      if (existingUserByUsername) {
+        throw new AppError(
+          `User with username ${userData.username} already exists`,
+          409
+        );
       }
     }
-    // Update in database
-    return UserModel.findByIdAndUpdate(id, updateData);
+
+    await this.userModel.update(id, userData);
+
+    // Fetch the updated user
+    const updatedUser = await this.userModel.findById(id);
+    if (!updatedUser) {
+      throw new AppError(`User with id ${id} not found after update`, 404);
+    }
+
+    return this.toUserResponse(updatedUser);
   }
 
-  // Delete a user
   async deleteUser(id: string): Promise<boolean> {
-    if (!id) {
-      throw new Error("Invalid ID");
+    const userExists = await this.userModel.findById(id);
+    if (!userExists) {
+      throw new AppError(`User with id ${id} not found`, 404);
     }
-    return UserModel.findByIdAndDelete(id);
+    return this.userModel.delete(id);
   }
 }
